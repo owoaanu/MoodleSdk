@@ -6,7 +6,7 @@
 Moodle Api Wrapper for C#
 
 ## Available for
-* .NetCore 6.0
+* .Net 8.0
 
 # Install
 ```

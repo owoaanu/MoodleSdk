@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net6.0</TargetFramework>
+		<TargetFramework>net8.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<Authors>Cyrus</Authors>
-		<Version>1.0.2</Version>
+		<Version>1.0.3</Version>
 		<Description>Moodle Api Wrapper for C#</Description>
 		<RepositoryUrl>https://github.com/Cyrus-Sushiant/MoodleApi</RepositoryUrl>
 		<RepositoryType>Git</RepositoryType>
@@ -32,7 +32,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="6.0.0" />
+	  <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.1" />
 	</ItemGroup>
 
 </Project>

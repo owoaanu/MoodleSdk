@@ -1,6 +1,6 @@
 ﻿using System.Text.Json;
 
-namespace MoodleApi.Extensions
+namespace MoodleSdk.Extensions
 {
     internal static class StringExtensions
     {

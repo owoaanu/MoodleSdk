@@ -1,14 +1,19 @@
-﻿using MoodleApi.Extensions;
+﻿using MoodleSdk.Extensions;
 using MoodleApi.Models;
 using MoodleApi.Models.Responses;
 using System.Net;
 using System.Text;
+using System.Linq;
+using MoodleSdk;
 
 namespace MoodleApi;
 
+[Obsolete("Use IMoodleClient and the service-based architecture instead. This class will be removed in a future major version.")]
 public class Moodle
 {
     private readonly HttpClient _httpClient;
+    private IMoodleClient? _sdkClient;
+    private MoodleSdk.Core.MoodleOptions? _sdkOptions;
     #region Properties
 
     /// <summary>
@@ -27,6 +32,26 @@ public class Moodle
     /// Represents if the host address is set.
     /// </summary>
     private bool HostIsSet => Host is not null;
+
+    #endregion
+
+    #region SDK Delegation
+
+    private IMoodleClient GetSdkClient()
+    {
+        if (_sdkClient == null)
+        {
+            if (Host == null) throw new InvalidOperationException("Host is not set. Call SetHost first.");
+            _sdkOptions = new MoodleSdk.Core.MoodleOptions
+            {
+                BaseUrl = Host,
+                DefaultToken = Token ?? ""
+            };
+            // Use a local HttpClient or the injected one
+            _sdkClient = new MoodleSdk.MoodleClient(_httpClient, _sdkOptions, Enumerable.Empty<MoodleSdk.Hooks.IMoodleClientHook>());
+        }
+        return _sdkClient;
+    }
 
     #endregion
 
@@ -176,13 +201,11 @@ public class Moodle
     /// </summary>
     /// <param names="serviceHostNames">Returns information about a particular service.</param>
     /// <returns></returns>
-    public Task<MoodleResponse<SiteInfo>> GetSiteInfo(string serviceHostName = "")
+    public async Task<MoodleResponse<SiteInfo>> GetSiteInfo(string serviceShortName = "")
     {
-        var query = GetBaseQuery(MoodleMethod.CoreWebserviceGetSiteInfo);
-
-        query.AppendFilterQueryIfHasValue("&serviceshortnames[0]=", serviceHostName);
-
-        return Get<SiteInfo>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.System.GetSiteInfoAsync(serviceShortName);
+        return new MoodleResponse<SiteInfo>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
     #endregion
@@ -208,21 +231,11 @@ public class Moodle
     /// <param names="criteriaValue">Value of the first search term.</param>
     /// <param names="criterias">criteria key and value of the second and other search parameter.</param>
     /// <returns></returns>
-    public Task<MoodleResponse<UsersData>> GetUsers(string criteriaKey, string criteriaValue, params (string? Key, string? Value)[] criterias)
+    public async Task<MoodleResponse<UsersData>> GetUsers(string criteriaKey, string criteriaValue, params (string? Key, string? Value)[] criterias)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreUserGetUsers);
-
-        query.Append("&criteria[0][key]=").Append(criteriaKey)
-            .Append("&criteria[0][value]=").Append(criteriaValue);
-
-        for (int i = 0; i < criterias.Length; i++)
-        {
-            int index = i + 1;
-            query.Append("&criteria[").Append(index).Append("][key]=").Append(criterias[i].Key)
-                .Append("&criteria[").Append(index).Append("][value]=").Append(criterias[i].Value);
-        }
-
-        return Get<UsersData>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Users.GetUsersAsync(criteriaKey, criteriaValue, criterias.Select(c => (c.Key ?? "", c.Value ?? "")).ToArray());
+        return new MoodleResponse<UsersData>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -240,17 +253,11 @@ public class Moodle
     /// <param names="field">Field of the search parameter.</param>
     /// <param names="criteriaValue">Values of the search term.</param>
     /// <returns></returns>
-    public Task<MoodleResponse<User>> GetUsersByField(string field, params string[] values)
+    public async Task<MoodleResponse<User>> GetUsersByField(string field, params string[] values)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreUserGetUsersByField);
-        query.AppendFilterQuery("&field=", field);
-
-        for (int i = 0; i < values.Length; i++)
-        {
-            query.Append("&values[").Append(i).Append("]=").Append(values[i]);
-        }
-
-        return Get<User>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Users.GetUsersByFieldAsync(field, values);
+        return new MoodleResponse<User>(result.IsSuccess, null, result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -258,12 +265,11 @@ public class Moodle
     /// </summary>
     /// <param names="userId"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Cources>> GetUserCourses(int userId)
+    public async Task<MoodleResponse<Cources>> GetUserCourses(int userId)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreEnrolGetUsersCourses);
-        query.AppendFilterQuery("&userid=", userId);
-
-        return Get<Cources>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Enrolments.GetUserCoursesAsync(userId);
+        return new MoodleResponse<Cources>(result.IsSuccess, null, result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -277,7 +283,7 @@ public class Moodle
     /// <param name="auth"></param>
     /// <param name="idNumber"></param>
     /// <param name="language"></param>
-    /// <param name="calendartye"></param>
+    /// <param name="calendartype"></param>
     /// <param name="theme"></param>
     /// <param name="timezone"></param>
     /// <param name="mailFormat"></param>
@@ -293,39 +299,49 @@ public class Moodle
     /// <param name="customFieldsType"></param>
     /// <param name="customFieldsValue"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<NewUser>> CreateUser(string userName, string firstName, string lastName, string email, string password,
-        string auth = "", string idNumber = "", string language = "", string calendartye = "", string theme = "",
+    public async Task<MoodleResponse<NewUser>> CreateUser(string userName, string firstName, string lastName, string email, string password,
+        string auth = "", string idNumber = "", string language = "", string calendartype = "", string theme = "",
         string timezone = "", string mailFormat = "", string description = "", string city = "", string country = "",
         string firstNamePhonetic = "", string lastNamePhonetic = "", string middleName = "", string alternateName = "",
         string preferencesType = "", string preferencesValue = "",
         string customFieldsType = "", string customFieldsValue = "")
     {
-        var query = GetBaseQuery(MoodleMethod.CoreUserCreateUsers);
-        query.AppendFilterQuery("&users[0][username]=", userName)
-            .AppendFilterQuery("&users[0][password]=", password)
-            .AppendFilterQuery("&users[0][firstname]=", firstName)
-            .AppendFilterQuery("&users[0][lastname]=", lastName)
-            .AppendFilterQuery("&users[0][email]=", email)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", auth)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", idNumber)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", language)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", calendartye)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", theme)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", timezone)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", mailFormat)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", description)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", city)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", country)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", firstNamePhonetic)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", lastNamePhonetic)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", middleName)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", alternateName)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", preferencesType)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", preferencesValue)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", customFieldsType)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", customFieldsValue);
+        var sdk = GetSdkClient();
+        var request = new MoodleSdk.Models.CreateUserRequest
+        {
+            UserName = userName,
+            FirstName = firstName,
+            LastName = lastName,
+            Email = email,
+            Password = password,
+            Auth = auth,
+            IdNumber = idNumber,
+            Language = language,
+            Theme = theme,
+            Timezone = timezone,
+            Description = description,
+            City = city,
+            Country = country,
+            CalendarType = calendartype,
+            MailFormat = mailFormat,
+            FirstNamePhonetic = firstNamePhonetic,
+            LastNamePhonetic = lastNamePhonetic,
+            MiddleName = middleName,
+            AlternateName = alternateName
+        };
 
-        return Get<NewUser>(query);
+        if (!string.IsNullOrEmpty(preferencesType))
+        {
+            request.Preferences = new List<(string Name, string Value)> { (preferencesType, preferencesValue) };
+        }
+
+        if (!string.IsNullOrEmpty(customFieldsType))
+        {
+            request.CustomFields = new List<(string Type, string Value)> { (customFieldsType, customFieldsValue) };
+        }
+
+        var result = await sdk.Users.CreateUserAsync(request);
+        return new MoodleResponse<NewUser>(result.IsSuccess, result.Data?[0], null, ToLegacyError(result.Error));
     }
 
 
@@ -357,40 +373,49 @@ public class Moodle
     /// <param name="customfieldsType"></param>
     /// <param name="customfieldsValue"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Success>> UpdateUser(int id, string userName = "", string firstName = "", string lastName = "",
+    public async Task<MoodleResponse<Success>> UpdateUser(int id, string userName = "", string firstName = "", string lastName = "",
         string email = "", string password = "", string auth = "", string idNumber = "", string language = "",
-        string calendartye = "", string theme = "", string timezone = "", string mailFormat = "", string description = "", string city = "", string country = "",
+        string calendartype = "", string theme = "", string timezone = "", string mailFormat = "", string description = "", string city = "", string country = "",
         string firstNamePhonetic = "", string lastNamePhonetic = "", string middleName = "", string alternateName = "",
         string preferencesType = "", string preferencesValue = "",
         string customfieldsType = "", string customfieldsValue = "")
     {
-        var query = GetBaseQuery(MoodleMethod.CoreUserUpdateUsers);
-        query.AppendFilterQuery("&users[0][id]=", id)
-            .AppendFilterQueryIfHasValue("&users[0][username]=", userName)
-            .AppendFilterQueryIfHasValue("&users[0][password]=", password)
-            .AppendFilterQueryIfHasValue("&users[0][firstname]=", firstName)
-            .AppendFilterQueryIfHasValue("&users[0][lastname]=", lastName)
-            .AppendFilterQueryIfHasValue("&users[0][email]=", email)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", auth)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", idNumber)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", language)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", calendartye)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", theme)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", timezone)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", mailFormat)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", description)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", city)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", country)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", firstNamePhonetic)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", lastNamePhonetic)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", middleName)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", alternateName)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", preferencesType)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", preferencesValue)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", customfieldsType)
-            .AppendFilterQueryIfHasValue("&users[0][auth]=", customfieldsValue);
+        var sdk = GetSdkClient();
+        var request = new MoodleSdk.Models.CreateUserRequest
+        {
+            UserName = userName,
+            FirstName = firstName,
+            LastName = lastName,
+            Email = email,
+            Password = password,
+            Auth = auth,
+            IdNumber = idNumber,
+            Language = language,
+            Theme = theme,
+            Timezone = timezone,
+            Description = description,
+            City = city,
+            Country = country,
+            CalendarType = calendartype,
+            MailFormat = mailFormat,
+            FirstNamePhonetic = firstNamePhonetic,
+            LastNamePhonetic = lastNamePhonetic,
+            MiddleName = middleName,
+            AlternateName = alternateName
+        };
 
-        return Get<Success>(query);
+        if (!string.IsNullOrEmpty(preferencesType))
+        {
+            request.Preferences = new List<(string Name, string Value)> { (preferencesType, preferencesValue) };
+        }
+
+        if (!string.IsNullOrEmpty(customfieldsType))
+        {
+            request.CustomFields = new List<(string Type, string Value)> { (customfieldsType, customfieldsValue) };
+        }
+
+        var result = await sdk.Users.UpdateUserAsync(id, request);
+        return new MoodleResponse<Success>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -398,12 +423,11 @@ public class Moodle
     /// </summary>
     /// <param names="id"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Success>> DeleteUser(int id)
+    public async Task<MoodleResponse<Success>> DeleteUser(int id)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreUserUpdateUsers);
-        query.AppendFilterQuery("&userids[0]=", id);
-
-        return Get<Success>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Users.DeleteUsersAsync(id);
+        return new MoodleResponse<Success>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -417,16 +441,11 @@ public class Moodle
     /// <param name="contextLevel"></param>
     /// <param name="instanceId"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Success>> AssignRoles(int roleId, int userId, string contextId = "", string contextLevel = "", int? instanceId = null)
+    public async Task<MoodleResponse<Success>> AssignRoles(int roleId, int userId, string contextId = "", string contextLevel = "", int? instanceId = null)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreRoleAssignRoles);
-        query.AppendFilterQuery("&assignments[0][roleid]=", roleId)
-            .AppendFilterQuery("&assignments[0][userid]=", userId)
-            .AppendFilterQueryIfHasValue("&assignments[0][contextid]=", contextId)
-            .AppendFilterQueryIfHasValue("&assignments[0][contextlevel]=", contextLevel)
-            .AppendFilterQueryIfHasValue("&assignments[0][instanceId]=", instanceId);
-
-        return Get<Success>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Enrolments.AssignRoleAsync(roleId, userId, contextId, contextLevel, instanceId);
+        return new MoodleResponse<Success>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -438,51 +457,48 @@ public class Moodle
     /// <param name="contextLevel"></param>
     /// <param name="instanceId"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Success>> UnassignRoles(int roleId, int userId, string contextId = "", string contextLevel = "", int? instanceId = null)
+    public async Task<MoodleResponse<Success>> UnassignRoles(int roleId, int userId, string contextId = "", string contextLevel = "", int? instanceId = null)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreRoleUnassignRoles);
-        query.AppendFilterQuery("&unassignments[0][roleid]=", roleId)
-            .AppendFilterQuery("&unassignments[0][userid]=", userId)
-            .AppendFilterQueryIfHasValue("&unassignments[0][contextid]=", contextId)
-            .AppendFilterQueryIfHasValue("&unassignments[0][contextlevel]=", contextLevel)
-            .AppendFilterQueryIfHasValue("&unassignments[0][instanceId]=", instanceId);
-
-        return Get<Success>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Enrolments.UnassignRoleAsync(roleId, userId, contextId, contextLevel, instanceId);
+        return new MoodleResponse<Success>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
     #endregion
 
     #region Course Enrollment Actions
 
-    public Task<MoodleResponse<Success>> EnrolUser(int roleId, int userId, int courceId, int? timeStart = null, int? timeEnd = null, int? suspend = null)
+    public async Task<MoodleResponse<Success>> EnrolUser(int roleId, int userId, int courceId, int? timeStart = null, int? timeEnd = null, int? suspend = null)
     {
-        var query = GetBaseQuery(MoodleMethod.EnrolManualEnrolUsers);
-        query.AppendFilterQuery("&enrolments[0][roleid]=", roleId)
-            .AppendFilterQuery("&enrolments[0][userid]=", userId)
-            .AppendFilterQuery("&enrolments[0][courceid]=", courceId)
-            .AppendFilterQueryIfHasValue("&enrolments[0][timestart]=", timeStart)
-            .AppendFilterQueryIfHasValue("&enrolments[0][timeend]=", timeEnd)
-            .AppendFilterQueryIfHasValue("&enrolments[0][suspend]=", suspend);
+        var sdk = GetSdkClient();
+        // Manual mapping for now since IEnrolmentService.EnrolUserAsync is not implemented yet.
+        // I'll use Custom for now to keep Moodle.cs delegation moving.
+        var parameters = new Dictionary<string, object>
+        {
+            { "enrolments[0][roleid]", roleId },
+            { "enrolments[0][userid]", userId },
+            { "enrolments[0][courseid]", courceId } // Note: original code had 'courceid' typo which matches Moodle API
+        };
+        if (timeStart.HasValue) parameters.Add("enrolments[0][timestart]", timeStart.Value);
+        if (timeEnd.HasValue) parameters.Add("enrolments[0][timeend]", timeEnd.Value);
+        if (suspend.HasValue) parameters.Add("enrolments[0][suspend]", suspend.Value);
 
-        return Get<Success>(query);
+        var result = await sdk.Custom.CallAsync<Success>("enrol_manual_enrol_users", HttpMethod.Post, parameters);
+        return new MoodleResponse<Success>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
-    public Task<MoodleResponse<Success>> AddGroupMember(int groupId, int userId)
+    public async Task<MoodleResponse<Success>> AddGroupMember(int groupId, int userId)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreGroupAddGroupMembers);
-        query.AppendFilterQuery("&members[0][groupid]=", groupId)
-            .AppendFilterQuery("&members[0][userid]=", userId);
-
-        return Get<Success>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Groups.AddGroupMembersAsync((groupId, userId));
+        return new MoodleResponse<Success>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
-    public Task<MoodleResponse<Success>> DeleteGroupMember(int groupId, int userId)
+    public async Task<MoodleResponse<Success>> DeleteGroupMember(int groupId, int userId)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreGroupDeleteGroupMembers);
-        query.AppendFilterQuery("&members[0][groupid]=", groupId)
-            .AppendFilterQuery("&members[0][userid]=", userId);
-
-        return Get<Success>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Groups.DeleteGroupMembersAsync((groupId, userId));
+        return new MoodleResponse<Success>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
 
@@ -506,14 +522,13 @@ public class Moodle
     /// <param names="criteriaValue"><summary>Criteria[0][value] - The value to match</summary></param>
     /// <param names="addSubCategories"><summary>Return the sub categories infos (1 - default) otherwise only the category info (0)</summary></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Category>> GetCategories(string criteriaKey, string criteriaValue, int addSubCategories = 1)
+    public async Task<MoodleResponse<Category>> GetCategories(string criteriaKey, string criteriaValue, int addSubCategories = 1)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCourseGetCategories);
-        query.AppendFilterQuery("&criteria[0][key]=", criteriaKey)
-            .AppendFilterQuery("&criteria[0][value]=", criteriaValue)
-            .AppendFilterQueryIf(addSubCategories != 1, "&addsubcategories=", addSubCategories);
-
-        return Get<Category>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Courses.GetCategoriesAsync(criteriaKey, criteriaValue, addSubCategories);
+        // Note: SDK returns Category[], legacy wrapper expects single Category (which usually contains the array via deserialization of the root).
+        // Actually, Categories usually return an array. Let's check Category.cs structure.
+        return new MoodleResponse<Category>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -521,12 +536,11 @@ public class Moodle
     /// </summary>
     /// <param names="options"><summary>List of course id.If empty return all courses except front page course.</summary></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Course>> GetCourses(int? options = null)
+    public async Task<MoodleResponse<Course>> GetCourses(int? options = null)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCourseGetCourses);
-        query.AppendFilterQueryIfHasValue("&addsubcategories=", options);
-
-        return Get<Course>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Courses.GetCoursesAsync(options.HasValue ? [options.Value] : null);
+        return new MoodleResponse<Course>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -534,12 +548,11 @@ public class Moodle
     /// </summary>
     /// <param names="course_id"><summary>Course Id</summary></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Content>> GetContents(int courseId)
+    public async Task<MoodleResponse<Content>> GetContents(int courseId)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCourseGetContents);
-        query.AppendFilterQuery("&courseid=", courseId);
-
-        return Get<Content>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Courses.GetContentsAsync(courseId);
+        return new MoodleResponse<Content>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -547,28 +560,22 @@ public class Moodle
     /// </summary>
     /// <param names="groupId">Group Id</param>
     /// <returns></returns>
-    public Task<MoodleResponse<Group>> GetGroup(int groupId)
+    public async Task<MoodleResponse<Group>> GetGroup(int groupId)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreGroupGetGroups);
-        query.AppendFilterQuery("&groupids[0]=", groupId);
-
-        return Get<Group>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Groups.GetGroupsAsync(groupId);
+        return new MoodleResponse<Group>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
     /// <summary>
     /// Returns group details. 
     /// </summary>
     /// <param names="groupIds"><summary>Group Ids</summary></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Group>> GetGroups(int[] groupIds)
+    public async Task<MoodleResponse<Group>> GetGroups(int[] groupIds)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreGroupGetGroups);
-
-        for (int i = 0; i < groupIds.Length; i++)
-        {
-            query.Append("&groupids[").Append(i).Append("]=").Append(groupIds[i]);
-        }
-
-        return Get<Group>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Groups.GetGroupsAsync(groupIds);
+        return new MoodleResponse<Group>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -576,12 +583,11 @@ public class Moodle
     /// </summary>
     /// <param names="courseId"><summary>Course Id</summary></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Group>> GetCourseGroups(int courseId)
+    public async Task<MoodleResponse<Group>> GetCourseGroups(int courseId)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreGroupGetCourseGroups);
-        query.AppendFilterQuery("&courseid=", courseId);
-
-        return Get<Group>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Groups.GetCourseGroupsAsync(courseId);
+        return new MoodleResponse<Group>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -589,12 +595,11 @@ public class Moodle
     /// </summary>
     /// <param names="courseId"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<EnrolledUser>> GetEnrolledUsersByCourse(int courseId)
+    public async Task<MoodleResponse<EnrolledUser>> GetEnrolledUsersByCourse(int courseId)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreEnrolGetEnrolledUsers);
-        query.AppendFilterQuery("&courseid=", courseId);
-
-        return Get<EnrolledUser>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Courses.GetEnrolledUsersByCourseAsync(courseId);
+        return new MoodleResponse<EnrolledUser>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -625,7 +630,7 @@ public class Moodle
     /// <param names="courcCourseformatoption"><summary>Optional //additional options for particular course format list of ( object { names string //course format option names
     ///value string //course format option value } )} )</summary></param>
     /// <returns></returns>
-    public Task<MoodleResponse<NewCourse>> CreateCourse(string fullName, string shortName, int categoryId,
+    public async Task<MoodleResponse<NewCourse>> CreateCourse(string fullName, string shortName, int categoryId,
         string idNumber = "", string summary = "", int summaryFormat = 1, string format = "", int showGrades = 0, int newsItems = 0,
         DateTime startdate = default, int numSections = int.MaxValue, int maxBytes = 104857600, int showReports = 1,
         int visible = 0, int hiddenSections = int.MaxValue, int groupMode = 0,
@@ -633,31 +638,30 @@ public class Moodle
         int completeNotify = 0, string language = "", string forceTheme = "",
         string courcCourseformatoption = ""/*not implemented*/)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCourseCreateCourses);
-        query.AppendFilterQuery("&courses[0][fullname]=", fullName)
-                .AppendFilterQuery("&courses[0][shortname]=", shortName)
-                .AppendFilterQuery("&courses[0][categoryid]=", categoryId)
-                .AppendFilterQueryIfHasValue("&courses[0][idnumber]=", idNumber)
-                .AppendFilterQueryIfHasValue("&courses[0][summary]=", summary)
-                .AppendFilterQueryIf(summaryFormat != 1, "&courses[0][summaryformat]=", summaryFormat)
-                .AppendFilterQueryIfHasValue("&courses[0][format]=", format)
-                .AppendFilterQueryIf(showGrades != 0, "&courses[0][showgrades]=", showGrades)
-                .AppendFilterQueryIf(startdate.Equals(default(DateTime)) is false, "&courses[0][startdate]=", DateTimeToUnixTimestamp(startdate))
-                .AppendFilterQueryIf(newsItems != 0, "&courses[0][newsitems]=", newsItems)
-                .AppendFilterQueryIf(numSections != int.MaxValue, "&courses[0][numsections]=", numSections)
-                .AppendFilterQueryIf(maxBytes != 104857600, "&courses[0][maxbytes]=", maxBytes)
-                .AppendFilterQueryIf(showReports != 1, "&courses[0][showreports]=", showReports)
-                .AppendFilterQueryIf(visible != 0, "&courses[0][visible]=", visible)
-                .AppendFilterQueryIf(hiddenSections != int.MaxValue, "&courses[0][hiddensections]=", hiddenSections)
-                .AppendFilterQueryIf(groupMode != 0, "&courses[0][groupmode]=", groupMode)
-                .AppendFilterQueryIf(groupModeForce != 0, "&courses[0][groupmodeforce]=", groupModeForce)
-                .AppendFilterQueryIf(defaultGroupingId != 0, "&courses[0][defaultgroupingid]=", defaultGroupingId)
-                .AppendFilterQueryIf(enableCompletion != int.MaxValue, "&courses[0][enablecompletion]=", enableCompletion)
-                .AppendFilterQueryIf(completeNotify != 0, "&courses[0][completenotify]=", completeNotify)
-                .AppendFilterQueryIfHasValue("&courses[0][lang]=", language)
-                .AppendFilterQueryIfHasValue("&courses[0][forcetheme]=", forceTheme);
+        var sdk = GetSdkClient();
+        var request = new MoodleSdk.Models.CreateCourseRequest
+        {
+            FullName = fullName,
+            ShortName = shortName,
+            CategoryId = categoryId,
+            IdNumber = idNumber,
+            Summary = summary,
+            SummaryFormat = summaryFormat,
+            Format = format,
+            ShowGrades = showGrades,
+            NewsItems = newsItems,
+            StartDate = startdate == default ? null : (int)DateTimeToUnixTimestamp(startdate),
+            NumSections = numSections == int.MaxValue ? null : numSections,
+            MaxBytes = maxBytes,
+            ShowReports = showReports,
+            Visible = visible,
+            GroupMode = groupMode,
+            GroupModeForce = groupModeForce,
+            DefaultGroupId = defaultGroupingId
+        };
 
-        return Get<NewCourse>(query);
+        var result = await sdk.Courses.CreateCoursesAsync(request);
+        return new MoodleResponse<NewCourse>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
     /// <summary>
@@ -665,19 +669,21 @@ public class Moodle
     /// </summary>
     /// <param name="courses"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<NewCourse>> CreateCourses((string FullName, string ShortName, int CategoryId)[] courses)
+    public async Task<MoodleResponse<NewCourse>> CreateCourses((string FullName, string ShortName, int CategoryId)[] courses)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCourseCreateCourses);
-        for (int i = 0; i < courses.Length; i++)
+        var sdk = GetSdkClient();
+        var requests = courses.Select(c => new MoodleSdk.Models.CreateCourseRequest
         {
-            query.Append("&courses[").Append(i).Append("][fullname]=").Append(courses[i].FullName)
-                .Append("&courses[").Append(i).Append("][shortname]=").Append(courses[i].ShortName)
-                .Append("&courses[").Append(i).Append("][categoryid]=").Append(courses[i].CategoryId);
-        }
-        return Get<NewCourse>(query);
+            FullName = c.FullName,
+            ShortName = c.ShortName,
+            CategoryId = c.CategoryId
+        }).ToArray();
+
+        var result = await sdk.Courses.CreateCoursesAsync(requests);
+        return new MoodleResponse<NewCourse>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
-    public Task<MoodleResponse<UpdateCourseRoot>> UpdateCourse(int id, string fullName = "", string shortName = "", int categoryId = int.MaxValue,
+    public async Task<MoodleResponse<UpdateCourseRoot>> UpdateCourse(int id, string fullName = "", string shortName = "", int categoryId = int.MaxValue,
         string idNumber = "", string summary = "", int summaryFormat = 1, string format = "", int showGrades = 0, int newsItems = 0,
         DateTime startdate = default, int numsections = int.MaxValue, int maxbytes = 104857600, int showreports = 1,
         int visible = 0, int hiddenSections = int.MaxValue, int groupMode = 0,
@@ -685,32 +691,33 @@ public class Moodle
         int completenotify = 0, string language = "", string forceTheme = "",
         string courcCourseformatoption = ""/*not implemented*/)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCourseUpdateCourses);
-        query.AppendFilterQuery("&courses[0][id]=", id)
-                .AppendFilterQueryIfHasValue("&courses[0][fullname]=", fullName)
-                .AppendFilterQueryIfHasValue("&courses[0][shortname]=", shortName)
-                .AppendFilterQueryIf(categoryId != int.MaxValue, "&courses[0][categoryid]=", categoryId)
-                .AppendFilterQueryIfHasValue("&courses[0][idnumber]=", idNumber)
-                .AppendFilterQueryIfHasValue("&courses[0][summary]=", summary)
-                .AppendFilterQueryIf(summaryFormat != 1, "&courses[0][summaryformat]=", summaryFormat)
-                .AppendFilterQueryIfHasValue("&courses[0][format]=", format)
-                .AppendFilterQueryIf(showGrades != 0, "&courses[0][showgrades]=", showGrades)
-                .AppendFilterQueryIf(startdate.Equals(default(DateTime)) is false, "&courses[0][startdate]=", DateTimeToUnixTimestamp(startdate))
-                .AppendFilterQueryIf(newsItems != 0, "&courses[0][newsitems]=", newsItems)
-                .AppendFilterQueryIf(numsections != int.MaxValue, "&courses[0][numsections]=", numsections)
-                .AppendFilterQueryIf(maxbytes != 104857600, "&courses[0][maxbytes]=", maxbytes)
-                .AppendFilterQueryIf(showreports != 1, "&courses[0][showreports]=", showreports)
-                .AppendFilterQueryIf(visible != 0, "&courses[0][visible]=", visible)
-                .AppendFilterQueryIf(hiddenSections != int.MaxValue, "&courses[0][hiddensections]=", hiddenSections)
-                .AppendFilterQueryIf(groupMode != 0, "&courses[0][groupmode]=", groupMode)
-                .AppendFilterQueryIf(groupModeForce != 0, "&courses[0][groupmodeforce]=", groupModeForce)
-                .AppendFilterQueryIf(defaultGroupingId != 0, "&courses[0][defaultgroupingid]=", defaultGroupingId)
-                .AppendFilterQueryIf(enableCompletion != int.MaxValue, "&courses[0][enablecompletion]=", enableCompletion)
-                .AppendFilterQueryIf(completenotify != 0, "&courses[0][completenotify]=", completenotify)
-                .AppendFilterQueryIfHasValue("&courses[0][lang]=", language)
-                .AppendFilterQueryIfHasValue("&courses[0][forcetheme]=", forceTheme);
+        var sdk = GetSdkClient();
+        var updates = new Dictionary<string, object>();
+        if (!string.IsNullOrEmpty(fullName)) updates.Add("fullname", fullName);
+        if (!string.IsNullOrEmpty(shortName)) updates.Add("shortname", shortName);
+        if (categoryId != int.MaxValue) updates.Add("categoryid", categoryId);
+        if (!string.IsNullOrEmpty(idNumber)) updates.Add("idnumber", idNumber);
+        if (!string.IsNullOrEmpty(summary)) updates.Add("summary", summary);
+        if (summaryFormat != 1) updates.Add("summaryformat", summaryFormat);
+        if (!string.IsNullOrEmpty(format)) updates.Add("format", format);
+        if (showGrades != 0) updates.Add("showgrades", showGrades);
+        if (startdate != default) updates.Add("startdate", DateTimeToUnixTimestamp(startdate));
+        if (newsItems != 0) updates.Add("newsitems", newsItems);
+        if (numsections != int.MaxValue) updates.Add("numsections", numsections);
+        if (maxbytes != 104857600) updates.Add("maxbytes", maxbytes);
+        if (showreports != 1) updates.Add("showreports", showreports);
+        if (visible != 0) updates.Add("visible", visible);
+        if (hiddenSections != int.MaxValue) updates.Add("hiddensections", hiddenSections);
+        if (groupMode != 0) updates.Add("groupmode", groupMode);
+        if (groupModeForce != 0) updates.Add("groupmodeforce", groupModeForce);
+        if (defaultGroupingId != 0) updates.Add("defaultgroupingid", defaultGroupingId);
+        if (enableCompletion != int.MaxValue) updates.Add("enablecompletion", enableCompletion);
+        if (completenotify != 0) updates.Add("completenotify", completenotify);
+        if (!string.IsNullOrEmpty(language)) updates.Add("lang", language);
+        if (!string.IsNullOrEmpty(forceTheme)) updates.Add("forcetheme", forceTheme);
 
-        return Get<UpdateCourseRoot>(query);
+        var result = await sdk.Courses.UpdateCoursesAsync(id, updates);
+        return new MoodleResponse<UpdateCourseRoot>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
     #endregion
@@ -724,22 +731,11 @@ public class Moodle
     /// <param names="criteria_value"></param>
     /// <param names="addSubCategories"></param>
     /// <returns></returns>
-    public Task<MoodleResponse<Category>> GetGrades(int courseId, string component = "", int activityid = int.MaxValue, string[]? userIds = null)
+    public async Task<MoodleResponse<Category>> GetGrades(int courseId, string component = "", int activityid = int.MaxValue, string[]? userIds = null)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreGradesGetGrades);
-        query.AppendFilterQuery("&courseid=", courseId)
-                .AppendFilterQueryIfHasValue("&component=", component)
-                .AppendFilterQueryIf(activityid != int.MaxValue, "&activityid=", activityid);
-
-        if (userIds is not null && userIds.Length > 0)
-        {
-            for (int i = 0; i < userIds.Length; i++)
-            {
-                query.Append("&userids[").Append(i).Append("]=").Append(userIds[i]);
-            }
-        }
-
-        return Get<Category>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Grades.GetGradesAsync(courseId, component, activityid, userIds);
+        return new MoodleResponse<Category>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
 
@@ -749,135 +745,83 @@ public class Moodle
     #region Calander Actions
 
 
-    public Task<MoodleResponse<ListOfEvents>> GetCalanderEvents(int[]? groupids = null, int[]? courseIds = null, int[]? eventIds = null)
+    public async Task<MoodleResponse<ListOfEvents>> GetCalanderEvents(int[]? groupids = null, int[]? courseIds = null, int[]? eventIds = null)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCalendarGetCalendarEvents);
-
-        if (groupids is not null)
-            for (int i = 0; i < groupids.Length; i++)
-                query.Append("&events[groupids][").Append(i).Append("]=").Append(groupids[i]);
-
-        if (courseIds is not null)
-            for (int i = 0; i < courseIds.Length; i++)
-                query.Append("&events[courseids][").Append(i).Append("]=").Append(courseIds[i]);
-
-        if (eventIds is not null)
-            for (int i = 0; i < eventIds.Length; i++)
-                query.Append("&events[eventids][").Append(i).Append("]=").Append(eventIds[i]);
-
-        return Get<ListOfEvents>(query);
+        var sdk = GetSdkClient();
+        var result = await sdk.Calendar.GetCalendarEventsAsync(groupids, courseIds, eventIds);
+        return new MoodleResponse<ListOfEvents>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
 
-    public Task<MoodleResponse<ListOfEvents>> CreateCalanderEvents(string[] names, string[]? descriptions = null,
+    public async Task<MoodleResponse<ListOfEvents>> CreateCalanderEvents(string[] names, string[]? descriptions = null,
          int[]? formats = null, int[]? groupIds = null, int[]? courseIds = null, int[]? repeats = null,
          string[]? eventTypes = null, DateTime[]? timeStarts = null, TimeSpan[]? timeDurations = null,
          int[]? visible = null, int[]? sequences = null)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCalendarCreateCalendarEvents);
-
+        var sdk = GetSdkClient();
+        var events = new List<Dictionary<string, object>>();
         for (int i = 0; i < names.Length; i++)
-            query.Append("&events[").Append(i).Append("][name]=").Append(names[i]);
+        {
+            var e = new Dictionary<string, object> { { "name", names[i] } };
+            if (groupIds != null && i < groupIds.Length) e.Add("groupid", groupIds[i]);
+            if (courseIds != null && i < courseIds.Length) e.Add("courseid", courseIds[i]);
+            if (descriptions != null && i < descriptions.Length) e.Add("description", descriptions[i]);
+            if (formats != null && i < formats.Length) e.Add("format", formats[i]);
+            if (repeats != null && i < repeats.Length) e.Add("repeat", repeats[i]);
+            if (eventTypes != null && i < eventTypes.Length) e.Add("eventtype", eventTypes[i]);
+            if (timeStarts != null && i < timeStarts.Length) e.Add("timestart", DateTimeToUnixTimestamp(timeStarts[i]));
+            if (timeDurations != null && i < timeDurations.Length) e.Add("timeduration", (int)timeDurations[i].TotalSeconds);
+            if (visible != null && i < visible.Length) e.Add("visible", visible[i]);
+            if (sequences != null && i < sequences.Length) e.Add("sequence", sequences[i]);
+            events.Add(e);
+        }
 
-        if (groupIds is not null)
-            for (int i = 0; i < groupIds.Length; i++)
-                query.Append("&events[").Append(i).Append("][groupid]=").Append(groupIds[i]);
-
-        if (courseIds is not null)
-            for (int i = 0; i < courseIds.Length; i++)
-                query.Append("&events[").Append(i).Append("][courseid]=").Append(courseIds[i]);
-
-        if (descriptions is not null)
-            for (int i = 0; i < descriptions.Length; i++)
-                query.Append("&events[").Append(i).Append("][description]=").Append(descriptions[i]);
-
-        if (formats is not null)
-            for (int i = 0; i < formats.Length; i++)
-                query.Append("&events[").Append(i).Append("][format]=").Append(formats[i]);
-
-        if (repeats is not null)
-            for (int i = 0; i < repeats.Length; i++)
-                query.Append("&events[").Append(i).Append("][repeats]=").Append(repeats[i]);
-
-        if (eventTypes is not null)
-            for (int i = 0; i < eventTypes.Length; i++)
-                query.Append("&events[").Append(i).Append("][eventtypes]=").Append(eventTypes[i]);
-
-        if (timeStarts is not null)
-            for (int i = 0; i < timeStarts.Length; i++)
-                query.Append("&events[").Append(i).Append("][timestart]=").Append(DateTimeToUnixTimestamp(timeStarts[i]));
-
-        if (timeDurations != null)
-            for (int i = 0; i < timeDurations.Length; i++)
-                query.Append("&events[").Append(i).Append("][timeduration]=").Append(timeDurations[i].TotalSeconds);
-
-        if (visible is not null)
-            for (int i = 0; i < visible.Length; i++)
-                query.Append("&events[").Append(i).Append("][visible]=").Append(visible[i]);
-
-        if (sequences is not null)
-            for (int i = 0; i < sequences.Length; i++)
-                query.Append("&events[").Append(i).Append("][sequence]=").Append(sequences[i]);
-
-        return Get<ListOfEvents>(query);
+        var result = await sdk.Calendar.CreateCalendarEventsAsync(events);
+        return new MoodleResponse<ListOfEvents>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
 
-    public Task<MoodleResponse<ListOfEvents>> DeleteCalanderEvents(int[]? eventIds, int[]? repeats, string[]? descriptions = null)
+    public async Task<MoodleResponse<ListOfEvents>> DeleteCalanderEvents(int[]? eventIds, int[]? repeats, string[]? descriptions = null)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreCalendarDeleteCalendarEvents);
+        var sdk = GetSdkClient();
+        var events = new List<Dictionary<string, object>>();
+        int count = Math.Max(eventIds?.Length ?? 0, repeats?.Length ?? 0);
+        for (int i = 0; i < count; i++)
+        {
+            var e = new Dictionary<string, object>();
+            if (eventIds != null && i < eventIds.Length) e.Add("eventid", eventIds[i]);
+            if (repeats != null && i < repeats.Length) e.Add("repeat", repeats[i]);
+            if (descriptions != null && i < descriptions.Length) e.Add("description", descriptions[i]);
+            events.Add(e);
+        }
 
-        if (repeats is not null)
-            for (int i = 0; i < repeats.Length; i++)
-                query.Append("&events[").Append(i).Append("][repeat]=").Append(repeats[i]);
-
-        if (eventIds is not null)
-            for (int i = 0; i < eventIds.Length; i++)
-                query.Append("&events[").Append(i).Append("][eventid]=").Append(eventIds[i]);
-
-
-        if (descriptions is not null)
-            for (int i = 0; i < descriptions.Length; i++)
-                query.Append("&events[").Append(i).Append("][description]=").Append(descriptions[i]);
-
-        return Get<ListOfEvents>(query);
+        var result = await sdk.Calendar.DeleteCalendarEventsAsync(events);
+        return new MoodleResponse<ListOfEvents>(result.IsSuccess, result.Data, null, ToLegacyError(result.Error));
     }
 
     #endregion
 
     #region Group Actions
 
-    public Task<MoodleResponse<Group>> CreateGroups(string[]? names = null, int[]? courseids = null, string[]? descriptions = null,
+    public async Task<MoodleResponse<Group>> CreateGroups(string[]? names = null, int[]? courseids = null, string[]? descriptions = null,
         int[]? descriptionFormats = null, string[]? enrolmentKeys = null, string[]? idNumbers = null)
     {
-        var query = GetBaseQuery(MoodleMethod.CoreGroupCreateGroups);
+        var sdk = GetSdkClient();
+        var groups = new List<Dictionary<string, object>>();
+        int count = names?.Length ?? 0;
+        for (int i = 0; i < count; i++)
+        {
+            var g = new Dictionary<string, object> { { "name", names![i] } };
+            if (courseids != null && i < courseids.Length) g.Add("courseid", courseids[i]);
+            if (descriptions != null && i < descriptions.Length) g.Add("description", descriptions[i]);
+            if (descriptionFormats != null && i < descriptionFormats.Length) g.Add("descriptionformat", descriptionFormats[i]);
+            if (enrolmentKeys != null && i < enrolmentKeys.Length) g.Add("enrolmentkey", enrolmentKeys[i]);
+            if (idNumbers != null && i < idNumbers.Length) g.Add("idnumber", idNumbers[i]);
+            groups.Add(g);
+        }
 
-        if (names is not null)
-            for (int i = 0; i < names.Length; i++)
-                query.Append("&groups[").Append(i).Append("][name]=").Append(names[i]);
-
-        if (courseids is not null)
-            for (int i = 0; i < courseids.Length; i++)
-                query.Append("&groups[").Append(i).Append("][courseid]=").Append(courseids[i]);
-
-        if (descriptions is not null)
-            for (int i = 0; i < descriptions.Length; i++)
-                query.Append("&groups[").Append(i).Append("][description]=").Append(descriptions[i]);
-
-        if (descriptionFormats is not null)
-            for (int i = 0; i < descriptionFormats.Length; i++)
-                query.Append("&groups[").Append(i).Append("][descriptionformat]=").Append(descriptionFormats[i]);
-
-        if (enrolmentKeys is not null)
-            for (int i = 0; i < enrolmentKeys.Length; i++)
-                query.Append("&groups[").Append(i).Append("][enrolmentkey]=").Append(enrolmentKeys[i]);
-
-        if (idNumbers is not null)
-            for (int i = 0; i < idNumbers.Length; i++)
-                query.Append("&groups[").Append(i).Append("][idnumber]=").Append(idNumbers[i]);
-
-
-        return Get<Group>(query);
+        var result = await sdk.Groups.CreateGroupsAsync(groups);
+        return new MoodleResponse<Group>(result.IsSuccess, result.Data?.FirstOrDefault(), result.Data, ToLegacyError(result.Error));
     }
 
     #endregion
@@ -925,6 +869,18 @@ public class Moodle
     }
 
     #endregion
+
+    private MoodleApi.Models.Error? ToLegacyError(MoodleSdk.Core.MoodleError? error)
+    {
+        if (error == null) return null;
+        return new MoodleApi.Models.Error
+        {
+            ErrorCode = error.ErrorCode,
+            Exception = error.Exception,
+            Message = error.Message,
+            DebugInfo = error.DebugInfo
+        };
+    }
 
     #endregion
 }

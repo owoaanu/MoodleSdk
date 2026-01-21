@@ -1,4 +1,4 @@
-﻿using MoodleApi.Extensions;
+﻿using MoodleSdk.Extensions;
 
 namespace MoodleApi.Models.Responses;
 

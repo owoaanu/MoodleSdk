@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace MoodleApi.Extensions
+namespace MoodleSdk.Extensions
 {
     internal static class StringBuilderExtensions
     {

@@ -34,3 +34,12 @@ public class Course : IDataModel
     public List<CourseFormatOption>? CourseFormatOptions { get; set; }
     public int? HiddenSections { get; set; }
 }
+
+public class MoodleCourseListResponse : IDataModel
+{
+    [JsonPropertyName("courses")]
+    public List<Course> Courses { get; set; } = [];
+
+    [JsonPropertyName("warnings")]
+    public List<object>? Warnings { get; set; }
+}

@@ -1,4 +1,4 @@
-﻿using MoodleApi.Extensions;
+﻿using MoodleSdk.Extensions;
 
 namespace MoodleApi.Models.Responses;
 
@@ -36,5 +36,13 @@ public class MoodleResponse<T> where T : IDataModel
                 Data = stringJson.ParseJson<T>();
             }
         }
+    }
+
+    internal MoodleResponse(bool succeeded, T? data, T[]? dataArray, MoodleApi.Models.Error? error)
+    {
+        Succeeded = succeeded;
+        Data = data;
+        DataArray = dataArray;
+        this.error = error;
     }
 }

@@ -1,0 +1,18 @@
+Test run for /home/edsu-dev/Documents/dev/AGY/MoodleSdk/MoodleApi/MoodleSdk.Tests/bin/Debug/net9.0/MoodleSdk.Tests.dll (.NETCoreApp,Version=v9.0)
+VSTest version 17.12.0 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+/home/edsu-dev/Documents/dev/AGY/MoodleSdk/MoodleApi/MoodleSdk.Tests/bin/Debug/net9.0/MoodleSdk.Tests.dll
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 9.0.11)
+[xUnit.net 00:00:00.12]   Discovering: MoodleSdk.Tests
+[xUnit.net 00:00:00.20]   Discovered:  MoodleSdk.Tests
+[xUnit.net 00:00:00.21]   Starting:    MoodleSdk.Tests
+  Passed MoodleSdk.Tests.MoodleLiveTests.GetSiteInfo_ReturnsValidData [2 s]
+[xUnit.net 00:00:04.37]   Finished:    MoodleSdk.Tests
+  Passed MoodleSdk.Tests.MoodleLiveTests.GetUsers_ReturnsData [1 s]
+
+Test Run Successful.
+Total tests: 2
+     Passed: 2
+ Total time: 5.2170 Seconds

@@ -34,12 +34,12 @@ export default defineConfig({
                     { text: 'Legacy Support', link: '/guide/legacy-support' }
                 ]
             },
-            {
-                text: 'Deployment',
-                items: [
-                    { text: 'Publishing Guide', link: '/guide/publish' }
-                ]
-            }
+            // {
+            //     text: 'Deployment',
+            //     items: [
+            //         { text: 'Publishing Guide', link: '/guide/publish' }
+            //     ]
+            // }
         ],
         socialLinks: [
             { icon: 'github', link: 'https://github.com/owoaanu/MoodleSdk' }

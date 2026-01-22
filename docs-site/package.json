@@ -1,0 +1,17 @@
+{
+  "name": "moodle-sdk-docs",
+  "version": "1.0.0",
+  "description": "Premium documentation for Moodle SDK .NET",
+  "main": "index.js",
+  "scripts": {
+    "docs:dev": "vitepress dev",
+    "docs:build": "vitepress build",
+    "docs:preview": "vitepress preview"
+  },
+  "keywords": [],
+  "author": "Owoaanu, Cyrus.Sushiant, SmartClouds",
+  "license": "MIT",
+  "devDependencies": {
+    "vitepress": "^1.0.0"
+  }
+}

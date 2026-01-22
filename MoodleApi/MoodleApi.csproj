@@ -5,7 +5,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<Authors>Owoaanu, Cyrus.Sushiant, SmartClouds</Authors>
-		<Version>0.0.2</Version>
+		<Version>0.1.1</Version>
 		<Description>A modern, high-performance .NET 8.0 SDK for the Moodle Web Services API. Simplifies LMS integration with a strongly-typed client and native Dependency Injection support.</Description>
 		<RepositoryUrl>https://github.com/owoaanu/MoodleSdk</RepositoryUrl>
 		<RepositoryType>Git</RepositoryType>
@@ -17,6 +17,7 @@
 		<PackageProjectUrl>https://github.com/owoaanu/MoodleSdk</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<Product>Moodle SDK .NET</Product>
 		<Title>Moodle SDK .NET</Title>
 	</PropertyGroup>
@@ -28,13 +29,21 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<None Include="..\README.md">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+		<None Include="..\docs\**">
+			<Pack>True</Pack>
+			<PackagePath>docs\</PackagePath>
+		</None>
 		<None Include="..\icon.png">
 			<Pack>True</Pack>
-			<PackagePath></PackagePath>
+			<PackagePath>\</PackagePath>
 		</None>
 		<None Include="..\LICENSE">
 			<Pack>True</Pack>
-			<PackagePath></PackagePath>
+			<PackagePath>\</PackagePath>
 		</None>
 	</ItemGroup>
 

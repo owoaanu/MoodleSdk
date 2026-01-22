@@ -55,10 +55,10 @@ public class CourseApp(IMoodleClient moodle)
 
 ## Detailed Documentation
 
-- [**Moodle Setup Guide**](./guide/moodle-setup.md): How to enable Web Services and get your API Token.
-- [**Getting Started**](./guide/getting-started.md): Detailed guide for both DI and Non-DI applications.
-- [**Advanced Features**](./guide/advanced-features.md): Learn about the Hook system, Custom Functions, and Error Handling.
-- [**Migration & Legacy Support**](./guide/legacy-support.md): Information for users upgrading from older versions.
+- [**Moodle Setup Guide**](./moodle-setup.md): How to enable Web Services and get your API Token.
+- [**Getting Started**](./getting-started.md): Detailed guide for both DI and Non-DI applications.
+- [**Advanced Features**](./advanced-features.md): Learn about the Hook system, Custom Functions, and Error Handling.
+- [**Migration & Legacy Support**](./legacy-support.md): Information for users upgrading from older versions.
 
 ---
 

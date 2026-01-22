@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
     title: "Moodle SDK",
     description: "Modern .NET 8.0 SDK for Moodle API",
+    base: '/MoodleSdk/',
     themeConfig: {
         logo: '/logo.png',
         siteTitle: 'Moodle SDK',
@@ -45,7 +46,7 @@ export default defineConfig({
         ],
         footer: {
             message: 'Released under the MIT License.',
-            copyright: 'Copyright © 2026 SmartClouds'
+            copyright: 'Copyright © 2026 Owoaanu, Cyrus.Sushiant, SmartClouds'
         }
     }
 })

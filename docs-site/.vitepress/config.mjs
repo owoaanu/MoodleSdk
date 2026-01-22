@@ -10,7 +10,7 @@ export default defineConfig({
         nav: [
             { text: 'Home', link: '/' },
             { text: 'Guide', link: '/guide/getting-started' },
-            { text: 'API Reference', link: '/guide/advanced-features' },
+            // { text: 'API Reference', link: '/guide/advanced-features' },
             { text: 'NuGet', link: 'https://www.nuget.org/packages/MoodleSdk' }
         ],
         sidebar: [

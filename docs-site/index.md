@@ -15,6 +15,9 @@ hero:
     - theme: alt
       text: View on GitHub
       link: https://github.com/owoaanu/MoodleSdk
+    - theme: alt
+      text: Install via NuGet
+      link: https://www.nuget.org/packages/MoodleSdk
 
 features:
   - title: Modern .NET 8.0
